@@ -26,6 +26,9 @@
 FROM ubuntu:14.04
 MAINTAINER Tianon Gravi <admwiggin@gmail.com> (@tianon)
 
+RUN sed -i 's/http:\/\/archive\.ubuntu\.com\/ubuntu\//http:\/\/mirrors\.163\.com\/ubuntu\//g' /etc/apt/sources.list && \
+    echo /etc/apt/sources.list
+
 # Packaged dependencies
 RUN apt-get update && apt-get install -y \
 	apparmor \
