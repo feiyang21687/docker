@@ -43,6 +43,10 @@ var subsystems = map[string]subsystem{
 	"freezer":    &fs.FreezerGroup{},
 }
 
+const (
+	testScopeWait = 4
+)
+
 var (
 	connLock                        sync.Mutex
 	theConn                         *systemd.Conn
@@ -86,16 +90,41 @@ func UseSystemd() bool {
 			}
 		}
 
+		// Ensure the scope name we use doesn't exist. Use the Pid to
+		// avoid collisions between multiple libcontainer users on a
+		// single host.
+		scope := fmt.Sprintf("libcontainer-%d-systemd-test-default-dependencies.scope", os.Getpid())
+		testScopeExists := true
+		for i := 0; i <= testScopeWait; i++ {
+			if _, err := theConn.StopUnit(scope, "replace"); err != nil {
+				if dbusError, ok := err.(dbus.Error); ok {
+					if strings.Contains(dbusError.Name, "org.freedesktop.systemd1.NoSuchUnit") {
+						testScopeExists = false
+						break
+					}
+				}
+			}
+			time.Sleep(time.Millisecond)
+		}
+
+		// Bail out if we can't kill this scope without testing for DefaultDependencies
+		if testScopeExists {
+			return hasStartTransientUnit
+		}
+
 		// Assume StartTransientUnit on a scope allows DefaultDependencies
 		hasTransientDefaultDependencies = true
 		ddf := newProp("DefaultDependencies", false)
-		if _, err := theConn.StartTransientUnit("docker-systemd-test-default-dependencies.scope", "replace", ddf); err != nil {
+		if _, err := theConn.StartTransientUnit(scope, "replace", ddf); err != nil {
 			if dbusError, ok := err.(dbus.Error); ok {
-				if dbusError.Name == "org.freedesktop.DBus.Error.PropertyReadOnly" {
+				if strings.Contains(dbusError.Name, "org.freedesktop.DBus.Error.PropertyReadOnly") {
 					hasTransientDefaultDependencies = false
 				}
 			}
 		}
+
+		// Not critical because of the stop unit logic above.
+		theConn.StopUnit(scope, "replace")
 	}
 	return hasStartTransientUnit
 }
@@ -189,16 +218,7 @@ func (m *Manager) Apply(pid int) error {
 	}
 
 	paths := make(map[string]string)
-	for _, sysname := range []string{
-		"devices",
-		"memory",
-		"cpu",
-		"cpuset",
-		"cpuacct",
-		"blkio",
-		"perf_event",
-		"freezer",
-	} {
+	for sysname := range subsystems {
 		subsystemPath, err := getSubsystemPath(m.Cgroups, sysname)
 		if err != nil {
 			// Don't fail if a cgroup hierarchy was not found, just skip this subsystem

@@ -22,6 +22,7 @@ import (
 
 	"github.com/docker/docker/builder/command"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/stringutils"
 )
 
 func TestBuildJSONEmptyRun(t *testing.T) {
@@ -213,13 +214,19 @@ func TestBuildEnvironmentReplacementAddCopy(t *testing.T) {
   ENV baz foo
   ENV quux bar
   ENV dot .
+  ENV fee fff
+  ENV gee ggg
 
   ADD ${baz} ${dot}
   COPY ${quux} ${dot}
+  ADD ${zzz:-${fee}} ${dot}
+  COPY ${zzz:-${gee}} ${dot}
   `,
 		map[string]string{
 			"foo": "test1",
 			"bar": "test2",
+			"fff": "test3",
+			"ggg": "test4",
 		})
 
 	if err != nil {
@@ -241,9 +248,18 @@ func TestBuildEnvironmentReplacementEnv(t *testing.T) {
 
 	_, err := buildImage(name,
 		`
-  FROM scratch
-  ENV foo foo
+  FROM busybox
+  ENV foo zzz
   ENV bar ${foo}
+  ENV abc1='$foo'
+  ENV env1=$foo env2=${foo} env3="$foo" env4="${foo}"
+  RUN [ "$abc1" = '$foo' ] && (echo "$abc1" | grep -q foo)
+  ENV abc2="\$foo"
+  RUN [ "$abc2" = '$foo' ] && (echo "$abc2" | grep -q foo)
+  ENV abc3 '$foo'
+  RUN [ "$abc3" = '$foo' ] && (echo "$abc3" | grep -q foo)
+  ENV abc4 "\$foo"
+  RUN [ "$abc4" = '$foo' ] && (echo "$abc4" | grep -q foo)
   `, true)
 
 	if err != nil {
@@ -262,19 +278,34 @@ func TestBuildEnvironmentReplacementEnv(t *testing.T) {
 	}
 
 	found := false
+	envCount := 0
 
 	for _, env := range envResult {
 		parts := strings.SplitN(env, "=", 2)
 		if parts[0] == "bar" {
 			found = true
+			if parts[1] != "zzz" {
+				t.Fatalf("Could not find replaced var for env `bar`: got %q instead of `zzz`", parts[1])
+			}
+		} else if strings.HasPrefix(parts[0], "env") {
+			envCount++
+			if parts[1] != "zzz" {
+				t.Fatalf("%s should be 'foo' but instead its %q", parts[0], parts[1])
+			}
+		} else if strings.HasPrefix(parts[0], "env") {
+			envCount++
 			if parts[1] != "foo" {
-				t.Fatalf("Could not find replaced var for env `bar`: got %q instead of `foo`", parts[1])
+				t.Fatalf("%s should be 'foo' but instead its %q", parts[0], parts[1])
 			}
 		}
 	}
 
 	if !found {
 		t.Fatal("Never found the `bar` env variable")
+	}
+
+	if envCount != 4 {
+		t.Fatalf("Didn't find all env vars - only saw %d\n%s", envCount, envResult)
 	}
 
 	logDone("build - env environment replacement")
@@ -363,8 +394,8 @@ func TestBuildHandleEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, ok := result[`\\\\\\${FOO}`]; !ok {
-		t.Fatal(`Could not find volume \\\\\\${FOO} set from env foo in volumes table`)
+	if _, ok := result[`\\\${FOO}`]; !ok {
+		t.Fatal(`Could not find volume \\\${FOO} set from env foo in volumes table`, result)
 	}
 
 	logDone("build - handle escapes")
@@ -472,7 +503,7 @@ func TestBuildOnBuildForbiddenMaintainerInSourceImage(t *testing.T) {
 		t.Fatal(out, err)
 	}
 
-	cleanedContainerID := stripTrailingCharacters(out)
+	cleanedContainerID := strings.TrimSpace(out)
 
 	commitCmd := exec.Command(dockerBinary, "commit", "--run", "{\"OnBuild\":[\"MAINTAINER docker.io\"]}", cleanedContainerID, "onbuild")
 
@@ -506,7 +537,7 @@ func TestBuildOnBuildForbiddenFromInSourceImage(t *testing.T) {
 		t.Fatal(out, err)
 	}
 
-	cleanedContainerID := stripTrailingCharacters(out)
+	cleanedContainerID := strings.TrimSpace(out)
 
 	commitCmd := exec.Command(dockerBinary, "commit", "--run", "{\"OnBuild\":[\"FROM busybox\"]}", cleanedContainerID, "onbuild")
 
@@ -540,7 +571,7 @@ func TestBuildOnBuildForbiddenChainedInSourceImage(t *testing.T) {
 		t.Fatal(out, err)
 	}
 
-	cleanedContainerID := stripTrailingCharacters(out)
+	cleanedContainerID := strings.TrimSpace(out)
 
 	commitCmd := exec.Command(dockerBinary, "commit", "--run", "{\"OnBuild\":[\"ONBUILD RUN ls\"]}", cleanedContainerID, "onbuild")
 
@@ -1891,8 +1922,6 @@ func TestBuildWithInaccessibleFilesInContext(t *testing.T) {
 
 	}
 	logDone("build - ADD from context with inaccessible files must not pass")
-	logDone("build - ADD from context with accessible links must work")
-	logDone("build - ADD from context with ignored inaccessible files must work")
 }
 
 func TestBuildForceRm(t *testing.T) {
@@ -1939,6 +1968,7 @@ func TestBuildCancelationKillsSleep(t *testing.T) {
 
 	name := "testbuildcancelation"
 	defer deleteImages(name)
+	defer deleteAllContainers()
 
 	// (Note: one year, will never finish)
 	ctx, err := fakeContext("FROM busybox\nRUN sleep 31536000", nil)
@@ -2011,7 +2041,6 @@ func TestBuildCancelationKillsSleep(t *testing.T) {
 
 	buildCmd := exec.Command(dockerBinary, "build", "-t", name, ".")
 	buildCmd.Dir = ctx.Dir
-	buildCmd.Stdout = os.Stdout
 
 	err = buildCmd.Start()
 	if err != nil {
@@ -2132,7 +2161,6 @@ func TestBuildRm(t *testing.T) {
 	}
 
 	logDone("build - ensure --rm doesn't leave containers behind and that --rm=true is the default")
-	logDone("build - ensure --rm=false overrides the default")
 }
 
 func TestBuildWithVolumes(t *testing.T) {
@@ -2256,7 +2284,7 @@ func TestBuildRelativeWorkdir(t *testing.T) {
 
 func TestBuildWorkdirWithEnvVariables(t *testing.T) {
 	name := "testbuildworkdirwithenvvariables"
-	expected := "/test1/test2/$MISSING_VAR"
+	expected := "/test1/test2"
 	defer deleteImages(name)
 	_, err := buildImage(name,
 		`FROM busybox
@@ -3245,15 +3273,16 @@ CMD ["cat", "/foo"]`,
 	if out, _, err := runCommandWithOutput(buildCmd); err != nil {
 		t.Fatalf("build failed to complete: %v %v", out, err)
 	}
-	logDone(fmt.Sprintf("build - build an image with a context tar, compression: %v", compression))
 }
 
 func TestBuildContextTarGzip(t *testing.T) {
 	testContextTar(t, archive.Gzip)
+	logDone(fmt.Sprintf("build - build an image with a context tar, compression: %v", archive.Gzip))
 }
 
 func TestBuildContextTarNoCompression(t *testing.T) {
 	testContextTar(t, archive.Uncompressed)
+	logDone(fmt.Sprintf("build - build an image with a context tar, compression: %v", archive.Uncompressed))
 }
 
 func TestBuildNoContext(t *testing.T) {
@@ -3485,7 +3514,7 @@ func TestBuildFailsDockerfileEmpty(t *testing.T) {
 	defer deleteImages(name)
 	_, err := buildImage(name, ``, true)
 	if err != nil {
-		if !strings.Contains(err.Error(), "Dockerfile cannot be empty") {
+		if !strings.Contains(err.Error(), "The Dockerfile (Dockerfile) cannot be empty") {
 			t.Fatalf("Wrong error %v, must be about empty Dockerfile", err)
 		}
 	} else {
@@ -4025,9 +4054,9 @@ ENV    abc=zzz TO=/docker/world/hello
 ADD    $FROM $TO
 RUN    [ "$(cat $TO)" = "hello" ]
 ENV    abc "zzz"
-RUN    [ $abc = \"zzz\" ]
+RUN    [ $abc = "zzz" ]
 ENV    abc 'yyy'
-RUN    [ $abc = \'yyy\' ]
+RUN    [ $abc = 'yyy' ]
 ENV    abc=
 RUN    [ "$abc" = "" ]
 
@@ -4043,13 +4072,55 @@ RUN    [ "$abc" = "'foo'" ]
 ENV    abc=\"foo\"
 RUN    [ "$abc" = "\"foo\"" ]
 ENV    abc "foo"
-RUN    [ "$abc" = "\"foo\"" ]
+RUN    [ "$abc" = "foo" ]
 ENV    abc 'foo'
-RUN    [ "$abc" = "'foo'" ]
+RUN    [ "$abc" = 'foo' ]
 ENV    abc \'foo\'
-RUN    [ "$abc" = "\\'foo\\'" ]
+RUN    [ "$abc" = "'foo'" ]
 ENV    abc \"foo\"
-RUN    [ "$abc" = "\\\"foo\\\"" ]
+RUN    [ "$abc" = '"foo"' ]
+
+ENV    abc=ABC
+RUN    [ "$abc" = "ABC" ]
+ENV    def=${abc:-DEF}
+RUN    [ "$def" = "ABC" ]
+ENV    def=${ccc:-DEF}
+RUN    [ "$def" = "DEF" ]
+ENV    def=${ccc:-${def}xx}
+RUN    [ "$def" = "DEFxx" ]
+ENV    def=${def:+ALT}
+RUN    [ "$def" = "ALT" ]
+ENV    def=${def:+${abc}:}
+RUN    [ "$def" = "ABC:" ]
+ENV    def=${ccc:-\$abc:}
+RUN    [ "$def" = '$abc:' ]
+ENV    def=${ccc:-\${abc}:}
+RUN    [ "$def" = '${abc:}' ]
+ENV    mypath=${mypath:+$mypath:}/home
+RUN    [ "$mypath" = '/home' ]
+ENV    mypath=${mypath:+$mypath:}/away
+RUN    [ "$mypath" = '/home:/away' ]
+
+ENV    e1=bar
+ENV    e2=$e1
+ENV    e3=$e11
+ENV    e4=\$e1
+ENV    e5=\$e11
+RUN    [ "$e0,$e1,$e2,$e3,$e4,$e5" = ',bar,bar,,$e1,$e11' ]
+
+ENV    ee1 bar
+ENV    ee2 $ee1
+ENV    ee3 $ee11
+ENV    ee4 \$ee1
+ENV    ee5 \$ee11
+RUN    [ "$ee1,$ee2,$ee3,$ee4,$ee5" = 'bar,bar,,$ee1,$ee11' ]
+
+ENV    eee1="foo"
+ENV    eee2='foo'
+ENV    eee3 "foo"
+ENV    eee4 'foo'
+RUN    [ "$eee1,$eee2,$eee3,$eee4" = 'foo,foo,foo,foo' ]
+
 `
 	ctx, err := fakeContext(dockerfile, map[string]string{
 		"hello/docker/world": "hello",
@@ -4380,7 +4451,7 @@ func TestBuildOnBuildOutput(t *testing.T) {
 }
 
 func TestBuildInvalidTag(t *testing.T) {
-	name := "abcd:" + makeRandomString(200)
+	name := "abcd:" + stringutils.GenerateRandomAlphaOnlyString(200)
 	defer deleteImages(name)
 	_, out, err := buildImageWithOut(name, "FROM scratch\nMAINTAINER quux\n", true)
 	// if the error doesnt check for illegal tag name, or the image is built
@@ -4583,7 +4654,7 @@ func TestBuildExoticShellInterpolation(t *testing.T) {
 
 	_, err := buildImage(name, `
 		FROM busybox
-
+		
 		ENV SOME_VAR a.b.c
 
 		RUN [ "$SOME_VAR"       = 'a.b.c' ]
@@ -5447,7 +5518,7 @@ func TestBuildRUNoneJSON(t *testing.T) {
 	name := "testbuildrunonejson"
 
 	defer deleteAllContainers()
-	defer deleteImages(name)
+	defer deleteImages(name, "hello-world")
 
 	ctx, err := fakeContext(`FROM hello-world:frozen
 RUN [ "/hello" ]`, map[string]string{})
@@ -5473,7 +5544,7 @@ RUN [ "/hello" ]`, map[string]string{})
 func TestBuildResourceConstraintsAreUsed(t *testing.T) {
 	name := "testbuildresourceconstraints"
 	defer deleteAllContainers()
-	defer deleteImages(name)
+	defer deleteImages(name, "hello-world")
 
 	ctx, err := fakeContext(`
 	FROM hello-world:frozen
@@ -5483,7 +5554,7 @@ func TestBuildResourceConstraintsAreUsed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(dockerBinary, "build", "--rm=false", "--memory=64m", "--memory-swap=-1", "--cpuset-cpus=1", "--cpu-shares=100", "-t", name, ".")
+	cmd := exec.Command(dockerBinary, "build", "--rm=false", "--memory=64m", "--memory-swap=-1", "--cpuset-cpus=0", "--cpu-shares=100", "-t", name, ".")
 	cmd.Dir = ctx.Dir
 
 	out, _, err := runCommandWithOutput(cmd)
@@ -5495,7 +5566,7 @@ func TestBuildResourceConstraintsAreUsed(t *testing.T) {
 		t.Fatal(err, out)
 	}
 
-	cID := stripTrailingCharacters(out)
+	cID := strings.TrimSpace(out)
 
 	type hostConfig struct {
 		Memory     float64 // Use float64 here since the json decoder sees it that way
@@ -5514,7 +5585,7 @@ func TestBuildResourceConstraintsAreUsed(t *testing.T) {
 		t.Fatal(err, cfg)
 	}
 	mem := int64(c1.Memory)
-	if mem != 67108864 || c1.MemorySwap != -1 || c1.CpusetCpus != "1" || c1.CpuShares != 100 {
+	if mem != 67108864 || c1.MemorySwap != -1 || c1.CpusetCpus != "0" || c1.CpuShares != 100 {
 		t.Fatalf("resource constraints not set properly:\nMemory: %d, MemSwap: %d, CpusetCpus: %s, CpuShares: %d",
 			mem, c1.MemorySwap, c1.CpusetCpus, c1.CpuShares)
 	}
@@ -5533,7 +5604,7 @@ func TestBuildResourceConstraintsAreUsed(t *testing.T) {
 		t.Fatal(err, cfg)
 	}
 	mem = int64(c2.Memory)
-	if mem == 67108864 || c2.MemorySwap == -1 || c2.CpusetCpus == "1" || c2.CpuShares == 100 {
+	if mem == 67108864 || c2.MemorySwap == -1 || c2.CpusetCpus == "0" || c2.CpuShares == 100 {
 		t.Fatalf("resource constraints leaked from build:\nMemory: %d, MemSwap: %d, CpusetCpus: %s, CpuShares: %d",
 			mem, c2.MemorySwap, c2.CpusetCpus, c2.CpuShares)
 	}

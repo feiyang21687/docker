@@ -3,29 +3,30 @@ package events
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/docker/docker/engine"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/parsers/filters"
-	"github.com/docker/docker/utils"
 )
 
 const eventsLimit = 64
 
-type listener chan<- *utils.JSONMessage
+type listener chan<- *jsonmessage.JSONMessage
 
 type Events struct {
 	mu          sync.RWMutex
-	events      []*utils.JSONMessage
+	events      []*jsonmessage.JSONMessage
 	subscribers []listener
 }
 
 func New() *Events {
 	return &Events{
-		events: make([]*utils.JSONMessage, 0, eventsLimit),
+		events: make([]*jsonmessage.JSONMessage, 0, eventsLimit),
 	}
 }
 
@@ -45,7 +46,7 @@ func (e *Events) Install(eng *engine.Engine) error {
 	return nil
 }
 
-func (e *Events) Get(job *engine.Job) engine.Status {
+func (e *Events) Get(job *engine.Job) error {
 	var (
 		since   = job.GetenvInt64("since")
 		until   = job.GetenvInt64("until")
@@ -54,24 +55,24 @@ func (e *Events) Get(job *engine.Job) engine.Status {
 
 	eventFilters, err := filters.FromParam(job.Getenv("filters"))
 	if err != nil {
-		return job.Error(err)
+		return err
 	}
 
 	// If no until, disable timeout
-	if until == 0 {
+	if job.Getenv("until") == "" {
 		timeout.Stop()
 	}
 
-	listener := make(chan *utils.JSONMessage)
+	listener := make(chan *jsonmessage.JSONMessage)
 	e.subscribe(listener)
 	defer e.unsubscribe(listener)
 
 	job.Stdout.Write(nil)
 
 	// Resend every event in the [since, until] time interval.
-	if since != 0 {
+	if job.Getenv("since") != "" {
 		if err := e.writeCurrent(job, since, until, eventFilters); err != nil {
-			return job.Error(err)
+			return err
 		}
 	}
 
@@ -79,34 +80,34 @@ func (e *Events) Get(job *engine.Job) engine.Status {
 		select {
 		case event, ok := <-listener:
 			if !ok {
-				return engine.StatusOK
+				return nil
 			}
 			if err := writeEvent(job, event, eventFilters); err != nil {
-				return job.Error(err)
+				return err
 			}
 		case <-timeout.C:
-			return engine.StatusOK
+			return nil
 		}
 	}
 }
 
-func (e *Events) Log(job *engine.Job) engine.Status {
+func (e *Events) Log(job *engine.Job) error {
 	if len(job.Args) != 3 {
-		return job.Errorf("usage: %s ACTION ID FROM", job.Name)
+		return fmt.Errorf("usage: %s ACTION ID FROM", job.Name)
 	}
 	// not waiting for receivers
 	go e.log(job.Args[0], job.Args[1], job.Args[2])
-	return engine.StatusOK
+	return nil
 }
 
-func (e *Events) SubscribersCount(job *engine.Job) engine.Status {
+func (e *Events) SubscribersCount(job *engine.Job) error {
 	ret := &engine.Env{}
 	ret.SetInt("count", e.subscribersCount())
 	ret.WriteTo(job.Stdout)
-	return engine.StatusOK
+	return nil
 }
 
-func writeEvent(job *engine.Job, event *utils.JSONMessage, eventFilters filters.Args) error {
+func writeEvent(job *engine.Job, event *jsonmessage.JSONMessage, eventFilters filters.Args) error {
 	isFiltered := func(field string, filter []string) bool {
 		if len(filter) == 0 {
 			return false
@@ -169,7 +170,7 @@ func (e *Events) subscribersCount() int {
 func (e *Events) log(action, id, from string) {
 	e.mu.Lock()
 	now := time.Now().UTC().Unix()
-	jm := &utils.JSONMessage{Status: action, ID: id, From: from, Time: now}
+	jm := &jsonmessage.JSONMessage{Status: action, ID: id, From: from, Time: now}
 	if len(e.events) == cap(e.events) {
 		// discard oldest event
 		copy(e.events, e.events[1:])

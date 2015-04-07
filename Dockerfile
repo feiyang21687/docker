@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y \
 	apparmor \
 	aufs-tools \
 	automake \
+	bash-completion \
 	btrfs-tools \
 	build-essential \
 	curl \
@@ -140,10 +141,13 @@ RUN useradd --create-home --gid docker unprivilegeduser
 
 VOLUME /var/lib/docker
 WORKDIR /go/src/github.com/docker/docker
-ENV DOCKER_BUILDTAGS apparmor selinux btrfs_noversion
+ENV DOCKER_BUILDTAGS apparmor selinux
 
 # Let us use a .bashrc file
 RUN ln -sfv $PWD/.bashrc ~/.bashrc
+
+# Register Docker's bash completion.
+RUN ln -sv $PWD/contrib/completion/bash/docker /etc/bash_completion.d/docker
 
 # Get useful and necessary Hub images so we can "docker load" locally instead of pulling
 COPY contrib/download-frozen-image.sh /go/src/github.com/docker/docker/contrib/

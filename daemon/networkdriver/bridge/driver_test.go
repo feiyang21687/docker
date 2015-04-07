@@ -60,22 +60,22 @@ func TestAllocatePortDetection(t *testing.T) {
 
 	// Init driver
 	job := eng.Job("initdriver")
-	if res := InitDriver(job); res != engine.StatusOK {
+	if res := InitDriver(job); res != nil {
 		t.Fatal("Failed to initialize network driver")
 	}
 
 	// Allocate interface
 	job = eng.Job("allocate_interface", "container_id")
-	if res := Allocate(job); res != engine.StatusOK {
+	if res := Allocate(job); res != nil {
 		t.Fatal("Failed to allocate network interface")
 	}
 
 	// Allocate same port twice, expect failure on second call
 	job = newPortAllocationJob(eng, freePort)
-	if res := AllocatePort(job); res != engine.StatusOK {
+	if res := AllocatePort(job); res != nil {
 		t.Fatal("Failed to find a free port to allocate")
 	}
-	if res := AllocatePort(job); res == engine.StatusOK {
+	if res := AllocatePort(job); res == nil {
 		t.Fatal("Duplicate port allocation granted by AllocatePort")
 	}
 }
@@ -88,19 +88,19 @@ func TestHostnameFormatChecking(t *testing.T) {
 
 	// Init driver
 	job := eng.Job("initdriver")
-	if res := InitDriver(job); res != engine.StatusOK {
+	if res := InitDriver(job); res != nil {
 		t.Fatal("Failed to initialize network driver")
 	}
 
 	// Allocate interface
 	job = eng.Job("allocate_interface", "container_id")
-	if res := Allocate(job); res != engine.StatusOK {
+	if res := Allocate(job); res != nil {
 		t.Fatal("Failed to allocate network interface")
 	}
 
 	// Allocate port with invalid HostIP, expect failure with Bad Request http status
 	job = newPortAllocationJobWithInvalidHostIP(eng, freePort)
-	if res := AllocatePort(job); res == engine.StatusOK {
+	if res := AllocatePort(job); res == nil {
 		t.Fatal("Failed to check invalid HostIP")
 	}
 }
@@ -129,11 +129,11 @@ func newInterfaceAllocation(t *testing.T, input engine.Env) (output engine.Env) 
 	<-done
 
 	if input.Exists("expectFail") && input.GetBool("expectFail") {
-		if res == engine.StatusOK {
+		if res == nil {
 			t.Fatal("Doesn't fail to allocate network interface")
 		}
 	} else {
-		if res != engine.StatusOK {
+		if res != nil {
 			t.Fatal("Failed to allocate network interface")
 		}
 	}
@@ -184,16 +184,16 @@ func TestIPv6InterfaceAllocationAutoNetmaskLe80(t *testing.T) {
 
 	// ensure global ip with mac
 	ip := net.ParseIP(output.Get("GlobalIPv6"))
-	expected_ip := net.ParseIP("2001:db8:1234:1234:1234:abcd:abcd:abcd")
-	if ip.String() != expected_ip.String() {
-		t.Fatalf("Error ip %s should be %s", ip.String(), expected_ip.String())
+	expectedIP := net.ParseIP("2001:db8:1234:1234:1234:abcd:abcd:abcd")
+	if ip.String() != expectedIP.String() {
+		t.Fatalf("Error ip %s should be %s", ip.String(), expectedIP.String())
 	}
 
 	// ensure link local format
 	ip = net.ParseIP(output.Get("LinkLocalIPv6"))
-	expected_ip = net.ParseIP("fe80::a9cd:abff:fecd:abcd")
-	if ip.String() != expected_ip.String() {
-		t.Fatalf("Error ip %s should be %s", ip.String(), expected_ip.String())
+	expectedIP = net.ParseIP("fe80::a9cd:abff:fecd:abcd")
+	if ip.String() != expectedIP.String() {
+		t.Fatalf("Error ip %s should be %s", ip.String(), expectedIP.String())
 	}
 
 }
@@ -203,18 +203,18 @@ func TestIPv6InterfaceAllocationRequest(t *testing.T) {
 	input := engine.Env{}
 
 	_, subnet, _ := net.ParseCIDR("2001:db8:1234:1234:1234::/80")
-	expected_ip := net.ParseIP("2001:db8:1234:1234:1234::1328")
+	expectedIP := net.ParseIP("2001:db8:1234:1234:1234::1328")
 
 	// set global ipv6
 	input.Set("globalIPv6Network", subnet.String())
-	input.Set("RequestedIPv6", expected_ip.String())
+	input.Set("RequestedIPv6", expectedIP.String())
 
 	output := newInterfaceAllocation(t, input)
 
 	// ensure global ip with mac
 	ip := net.ParseIP(output.Get("GlobalIPv6"))
-	if ip.String() != expected_ip.String() {
-		t.Fatalf("Error ip %s should be %s", ip.String(), expected_ip.String())
+	if ip.String() != expectedIP.String() {
+		t.Fatalf("Error ip %s should be %s", ip.String(), expectedIP.String())
 	}
 
 	// retry -> fails for duplicated address
@@ -244,13 +244,13 @@ func TestLinkContainers(t *testing.T) {
 
 	// Init driver
 	job := eng.Job("initdriver")
-	if res := InitDriver(job); res != engine.StatusOK {
+	if res := InitDriver(job); res != nil {
 		t.Fatal("Failed to initialize network driver")
 	}
 
 	// Allocate interface
 	job = eng.Job("allocate_interface", "container_id")
-	if res := Allocate(job); res != engine.StatusOK {
+	if res := Allocate(job); res != nil {
 		t.Fatal("Failed to allocate network interface")
 	}
 
@@ -267,7 +267,7 @@ func TestLinkContainers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if res := LinkContainers(job); res != engine.StatusOK {
+	if res := LinkContainers(job); res != nil {
 		t.Fatalf("LinkContainers failed")
 	}
 

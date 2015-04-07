@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api"
+	"github.com/docker/docker/pkg/stringutils"
 )
 
 // Daemon represents a Docker daemon for the testing framework.
@@ -395,9 +396,8 @@ func getSliceOfPausedContainers() ([]string, error) {
 	if err == nil {
 		slice := strings.Split(strings.TrimSpace(out), "\n")
 		return slice, err
-	} else {
-		return []string{out}, err
 	}
+	return []string{out}, err
 }
 
 func unpauseContainer(container string) error {
@@ -526,7 +526,7 @@ func getContainerCount() (int, error) {
 	lines := strings.Split(out, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, containers) {
-			output := stripTrailingCharacters(line)
+			output := strings.TrimSpace(line)
 			output = strings.TrimLeft(output, containers)
 			output = strings.Trim(output, " ")
 			containerCount, err := strconv.Atoi(output)
@@ -696,8 +696,8 @@ func (f *remoteFileServer) Close() error {
 
 func newRemoteFileServer(ctx *FakeContext) (*remoteFileServer, error) {
 	var (
-		image     = fmt.Sprintf("fileserver-img-%s", strings.ToLower(makeRandomString(10)))
-		container = fmt.Sprintf("fileserver-cnt-%s", strings.ToLower(makeRandomString(10)))
+		image     = fmt.Sprintf("fileserver-img-%s", strings.ToLower(stringutils.GenerateRandomAlphaOnlyString(10)))
+		container = fmt.Sprintf("fileserver-cnt-%s", strings.ToLower(stringutils.GenerateRandomAlphaOnlyString(10)))
 	)
 
 	// Build the image
@@ -1045,7 +1045,7 @@ func daemonTime(t *testing.T) time.Time {
 
 	body, err := sockRequest("GET", "/info", nil)
 	if err != nil {
-		t.Fatal("daemonTime: failed to get /info: %v", err)
+		t.Fatalf("daemonTime: failed to get /info: %v", err)
 	}
 
 	type infoJSON struct {

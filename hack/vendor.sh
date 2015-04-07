@@ -11,17 +11,17 @@ clone() {
 	vcs=$1
 	pkg=$2
 	rev=$3
-	
+
 	pkg_url=https://$pkg
 	target_dir=src/$pkg
-	
+
 	echo -n "$pkg @ $rev: "
-	
+
 	if [ -d $target_dir ]; then
 		echo -n 'rm old, '
 		rm -fr $target_dir
 	fi
-	
+
 	echo -n 'clone, '
 	case $vcs in
 		git)
@@ -32,10 +32,10 @@ clone() {
 			hg clone --quiet --updaterev $rev $pkg_url $target_dir
 			;;
 	esac
-	
+
 	echo -n 'rm VCS, '
 	( cd $target_dir && rm -rf .{git,hg} )
-	
+
 	echo done
 }
 
@@ -53,7 +53,7 @@ clone hg code.google.com/p/gosqlite 74691fb6f837
 
 clone git github.com/docker/libtrust 230dfd18c232
 
-clone git github.com/Sirupsen/logrus v0.7.1
+clone git github.com/Sirupsen/logrus v0.7.2
 
 clone git github.com/go-fsnotify/fsnotify v1.0.4
 
@@ -75,7 +75,7 @@ rm -rf src/github.com/docker/distribution
 mkdir -p src/github.com/docker/distribution
 mv tmp-digest src/github.com/docker/distribution/digest
 
-clone git github.com/docker/libcontainer 4a72e540feb67091156b907c4700e580a99f5a9d
+clone git github.com/docker/libcontainer d00b8369852285d6a830a8d3b966608b2ed89705
 # see src/github.com/docker/libcontainer/update-vendor.sh which is the "source of truth" for libcontainer deps (just like this file)
 rm -rf src/github.com/docker/libcontainer/vendor
 eval "$(grep '^clone ' src/github.com/docker/libcontainer/update-vendor.sh | grep -v 'github.com/codegangsta/cli' | grep -v 'github.com/Sirupsen/logrus')"

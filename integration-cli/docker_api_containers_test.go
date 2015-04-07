@@ -232,7 +232,7 @@ func TestContainerApiStartVolumesFrom(t *testing.T) {
 // This is pretty much the same as TestRunApplyVolumesFromBeforeVolumes, except with passing the VolumesFrom and the bind on start
 func TestVolumesFromHasPriority(t *testing.T) {
 	defer deleteAllContainers()
-	volName := "voltst"
+	volName := "voltst2"
 	volPath := "/tmp"
 
 	if out, _, err := runCommandWithOutput(exec.Command(dockerBinary, "run", "-d", "--name", volName, "-v", volPath, "busybox")); err != nil {
@@ -515,4 +515,41 @@ func TestBuildApiDockerfileSymlink(t *testing.T) {
 	}
 
 	logDone("container REST API - check build w/bad Dockerfile symlink path")
+}
+
+// #9981 - Allow a docker created volume (ie, one in /var/lib/docker/volumes) to be used to overwrite (via passing in Binds on api start) an existing volume
+func TestPostContainerBindNormalVolume(t *testing.T) {
+	defer deleteAllContainers()
+
+	out, _, err := runCommandWithOutput(exec.Command(dockerBinary, "create", "-v", "/foo", "--name=one", "busybox"))
+	if err != nil {
+		t.Fatal(err, out)
+	}
+
+	fooDir, err := inspectFieldMap("one", "Volumes", "/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err = runCommandWithOutput(exec.Command(dockerBinary, "create", "-v", "/foo", "--name=two", "busybox"))
+	if err != nil {
+		t.Fatal(err, out)
+	}
+
+	bindSpec := map[string][]string{"Binds": {fooDir + ":/foo"}}
+	_, err = sockRequest("POST", "/containers/two/start", bindSpec)
+	if err != nil && !strings.Contains(err.Error(), "204 No Content") {
+		t.Fatal(err)
+	}
+
+	fooDir2, err := inspectFieldMap("two", "Volumes", "/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if fooDir2 != fooDir {
+		t.Fatalf("expected volume path to be %s, got: %s", fooDir, fooDir2)
+	}
+
+	logDone("container REST API - can use path from normal volume as bind-mount to overwrite another volume")
 }

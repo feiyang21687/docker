@@ -171,10 +171,10 @@ Under the hood, Docker is built on the following components:
   [cgroup](http://blog.dotcloud.com/kernel-secrets-from-the-paas-garage-part-24-c)
   and
   [namespacing](http://blog.dotcloud.com/under-the-hood-linux-kernels-on-dotcloud-part)
-  capabilities of the Linux kernel;
-* The [Go](http://golang.org) programming language.
-* The [Docker Image Specification] (https://github.com/docker/docker/blob/master/image/spec/v1.md)
-* The [Libcontainer Specification] (https://github.com/docker/libcontainer/blob/master/SPEC.md)
+  capabilities of the Linux kernel
+* The [Go](http://golang.org) programming language
+* The [Docker Image Specification](https://github.com/docker/docker/blob/master/image/spec/v1.md)
+* The [Libcontainer Specification](https://github.com/docker/libcontainer/blob/master/SPEC.md)
 
 Contributing to Docker
 ======================
@@ -210,7 +210,7 @@ We are always open to suggestions on process improvements, and are always lookin
 ### Legal
 
 *Brought to you courtesy of our legal counsel. For more context,
-please see the "NOTICE" document in this repo.*
+please see the [NOTICE](https://github.com/docker/docker/blob/master/NOTICE) document in this repo.*
 
 Use and transfer of Docker may be subject to certain restrictions by the
 United States and other governments.  
@@ -232,9 +232,6 @@ There are a number of projects under development that are based on Docker's
 core technology. These projects expand the tooling built around the
 Docker platform to broaden its application and utility. 
 
-If you know of another project underway that should be listed here, please help
-us keep this list up-to-date by submitting a PR.
-
 * [Docker Registry](https://github.com/docker/distribution): Registry 
 server for Docker (hosting/delivery of repositories and images)
 * [Docker Machine](https://github.com/docker/machine): Machine management 
@@ -243,4 +240,8 @@ for a container-centric world
 system 
 * [Docker Compose](https://github.com/docker/compose) (formerly Fig): 
 Define and run multi-container apps
+* [Kitematic](https://github.com/kitematic/kitematic): The easiest way to use 
+Docker on a Mac
 
+If you know of another project underway that should be listed here, please help 
+us keep this list up-to-date by submitting a PR.

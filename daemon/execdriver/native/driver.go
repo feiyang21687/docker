@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/pkg/reexec"
 	sysinfo "github.com/docker/docker/pkg/system"
@@ -64,7 +64,6 @@ func NewDriver(root, initPath string) (*driver, error) {
 		root,
 		cgm,
 		libcontainer.InitPath(reexec.Self(), DriverName),
-		libcontainer.TmpfsRoot,
 	)
 	if err != nil {
 		return nil, err
@@ -157,30 +156,38 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		startCallback(&c.ProcessConfig, pid)
 	}
 
-	oomKillNotification, err := cont.NotifyOOM()
-	if err != nil {
-		oomKillNotification = nil
-		log.Warnf("Your kernel does not support OOM notifications: %s", err)
-	}
+	oom := notifyOnOOM(cont)
 	waitF := p.Wait
-	if nss := cont.Config().Namespaces; nss.Contains(configs.NEWPID) {
-		// we need such hack for tracking processes with inerited fds,
+	if nss := cont.Config().Namespaces; !nss.Contains(configs.NEWPID) {
+		// we need such hack for tracking processes with inherited fds,
 		// because cmd.Wait() waiting for all streams to be copied
 		waitF = waitInPIDHost(p, cont)
 	}
 	ps, err := waitF()
 	if err != nil {
-		if err, ok := err.(*exec.ExitError); !ok {
+		execErr, ok := err.(*exec.ExitError)
+		if !ok {
 			return execdriver.ExitStatus{ExitCode: -1}, err
-		} else {
-			ps = err.ProcessState
 		}
+		ps = execErr.ProcessState
 	}
 	cont.Destroy()
-
-	_, oomKill := <-oomKillNotification
-
+	_, oomKill := <-oom
 	return execdriver.ExitStatus{ExitCode: utils.ExitStatus(ps.Sys().(syscall.WaitStatus)), OOMKilled: oomKill}, nil
+}
+
+// notifyOnOOM returns a channel that signals if the container received an OOM notification
+// for any process.  If it is unable to subscribe to OOM notifications then a closed
+// channel is returned as it will be non-blocking and return the correct result when read.
+func notifyOnOOM(container libcontainer.Container) <-chan struct{} {
+	oom, err := container.NotifyOOM()
+	if err != nil {
+		logrus.Warnf("Your kernel does not support OOM notifications: %s", err)
+		c := make(chan struct{})
+		close(c)
+		return c
+	}
+	return oom
 }
 
 func waitInPIDHost(p *libcontainer.Process, c libcontainer.Container) func() (*os.ProcessState, error) {
@@ -190,16 +197,17 @@ func waitInPIDHost(p *libcontainer.Process, c libcontainer.Container) func() (*o
 			return nil, err
 		}
 
+		processes, err := c.Processes()
+
 		process, err := os.FindProcess(pid)
 		s, err := process.Wait()
 		if err != nil {
-			if err, ok := err.(*exec.ExitError); !ok {
+			execErr, ok := err.(*exec.ExitError)
+			if !ok {
 				return s, err
-			} else {
-				s = err.ProcessState
 			}
+			s = execErr.ProcessState
 		}
-		processes, err := c.Processes()
 		if err != nil {
 			return s, err
 		}
@@ -207,7 +215,7 @@ func waitInPIDHost(p *libcontainer.Process, c libcontainer.Container) func() (*o
 		for _, pid := range processes {
 			process, err := os.FindProcess(pid)
 			if err != nil {
-				log.Errorf("Failed to kill process: %d", pid)
+				logrus.Errorf("Failed to kill process: %d", pid)
 				continue
 			}
 			process.Kill()

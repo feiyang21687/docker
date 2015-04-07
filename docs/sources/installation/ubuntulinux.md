@@ -105,7 +105,8 @@ install Docker using the following:
 
 	 If `wget` isn't installed, install it after updating your manager:
 
-		$ sudo apt-get update $ sudo apt-get install wget
+		$ sudo apt-get update
+		$ sudo apt-get install wget
 
 3. Get the latest Docker package.
 
@@ -282,7 +283,7 @@ To specify a DNS server for use by Docker:
 **Or, as an alternative to the previous procedure,** disable `dnsmasq` in
 NetworkManager (this might slow your network).
 
-1. Open the `/etc/default/docker` file for editing.
+1. Open the `/etc/NetworkManager/NetworkManager.conf` file for editing.
 
 		$ sudo nano /etc/NetworkManager/NetworkManager.conf
 
@@ -301,5 +302,5 @@ NetworkManager (this might slow your network).
 
 To install the latest version of Docker, use the standard `-N` flag with `wget`:
 
-	$ wget -N https://get.docker.com/ | sh
+	$ wget -N -qO- https://get.docker.com/ | sh
 
